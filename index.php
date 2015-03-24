@@ -3,7 +3,7 @@
 
 // http://www.phpbuddy.com/article.php?id=6
 
-set_time_limit( 60 );
+set_time_limit( 60 * 5 );
 
 require_once('wbDatabase.php');
 require_once('wb_dacl.class.php');
@@ -62,63 +62,121 @@ require_once('wb_dacl.class.php');
 // ************************************************************************
 // Create a ARO Tree
 
-  $count = 5;
+  $count  = 50;
+  $time   = 0;
 
-  echo '<div style="height:100%;width:30%;float:left;">';
-
-  echo microtime(true) . '<br>';
-  $acl->create_aro( 'user', 'Users ARO' );
-  $acl->create_aro( 'user.private', 'Private Users' );
-  if( $aro_id = $acl->create_aro( 'user.private.dhunt', 'David Hunt' ) )
-    $acl->create_aro( 'friends', 'David Hunt Friends', $aro_id );
-  for( $i=0; $i<$count; $i++ ){
-    $i_pid = $acl->create_aro( 'user.private.dhunt.friends.article_'.$i, 'Article #'.$i );
-    for( $x=0; $x<$count; $x++ ){
-      $x_pid = $acl->create_aro( 'edit_'.$x, 'Article #'.$i.' Edit #'.$x, $i_pid );
-      for( $y=0; $y<$count; $y++ ){
-        $y_pid = $acl->create_aro( 'revision_'.$y, 'Article #'.$i.' Edit #'.$x.' Revision #'.$y, $x_pid );
+  $wb_dbh->runQuery("TRUNCATE TABLE `wbdacl_aro`");
+  echo '<div style="height:100%;float:left;">';
+    $time = microtime(true);
+    $acl->create_aro( 'user', 'Users ARO' );
+    $acl->create_aro( 'user.private', 'Private Users' );
+    if( $aro_id = $acl->create_aro( 'user.private.dhunt', 'David Hunt' ) )
+      $acl->create_aro( 'friends', 'David Hunt Friends', $aro_id );
+    for( $i=0; $i<$count; $i++ ){
+      $i_pid = $acl->create_aro( 'user.private.dhunt.friends.article_'.$i, 'Article #'.$i );
+      for( $x=0; $x<rand(1,$count); $x++ ){
+        $x_pid = $acl->create_aro( 'edit_'.$x, 'Article #'.$i.' Edit #'.$x, $i_pid );
+        for( $y=0; $y<rand(1,$count); $y++ ){
+          $y_pid = $acl->create_aro( 'revision_'.$y, 'Article #'.$i.' Edit #'.$x.' Revision #'.$y, $x_pid );
+        }
       }
     }
-  }
-  $acl->create_aro( 'user.public', 'Public Users' );
-  $acl->create_aro( 'user.public.phunt', 'Peter Hunt' );
-  $acl->create_aro( 'user.public.jhunt', 'Jane Hunt' );
-  $acl->create_aro( 'user.public.dhunt', 'David Hunt' );
-  for( $i=0; $i<$count; $i++ ){
-    $acl->create_aro( 'user.public.dhunt.article_'.$i, 'Article #'.$i );
-  }
-  echo microtime(true) . '<br>';
-
-  $tree = $acl->get_aro_tree();
-  draw_tree('aro', $tree);
+    $acl->create_aro( 'user.public', 'Public Users' );
+    $acl->create_aro( 'user.public.phunt', 'Peter Hunt' );
+    $acl->create_aro( 'user.public.jhunt', 'Jane Hunt' );
+    $acl->create_aro( 'user.public.dhunt', 'David Hunt' );
+    for( $i=0; $i<$count; $i++ ){
+      $acl->create_aro( 'user.public.dhunt.article_'.$i, 'Article #'.$i );
+    }
+    echo (microtime(true) - $time) . '<br>';
+    $tree = $acl->get_aro_tree();
+    draw_tree('aro', $tree);
   echo '</div>';
 
-  echo '<div style="height:100%;width:30%;float:left;">';
-
-  echo microtime(true) . '<br>';
-  $acl->rebuild_aro();
-  echo microtime(true) . '<br>';
-
-  $tree = $acl->get_aro_tree();
-  draw_tree('aro', $tree);
+  echo '<div style="height:100%;float:left;">';
+    $time = microtime(true);
+    $acl->rebuild_aro_alt();
+    echo (microtime(true) - $time) . '<br>';
+    $tree = $acl->get_aro_tree();
+    draw_tree('aro', $tree);
   echo '</div>';
 
-  echo '<div style="height:100%;width:30%;float:left;">';
+  echo '<div style="height:100%;float:left;">';
+    $time = microtime(true);
+    $acl->rebuild_aro();
+    echo (microtime(true) - $time) . '<br>';
+    $tree = $acl->get_aro_tree();
+    draw_tree('aro', $tree);
+  echo '</div>';
 
-  echo microtime(true) . '<br>';
-  for( $i=$count; $i<$count*2; $i++ ){
-    $i_pid = $acl->create_aro( 'user.private.dhunt.friends.article_'.$i, 'Article #'.$i );
-    for( $x=$count; $x<$count*2; $x++ ){
-      $x_pid = $acl->create_aro( 'edit_'.$x, 'Article #'.$i.' Edit #'.$x, $i_pid );
-      for( $y=$count; $y<$count*2; $y++ ){
-        $y_pid = $acl->create_aro( 'revision_'.$y, 'Article #'.$i.' Edit #'.$x.' Revision #'.$y, $x_pid );
+  die();
+
+  echo '<div style="height:100%;float:left;">';
+    $time = microtime(true);
+    for( $i=$count; $i<$count*2; $i++ ){
+      $i_pid = $acl->create_aro( 'user.private.dhunt.friends.article_'.$i, 'Article #'.$i );
+      for( $x=$count; $x<$count*2; $x++ ){
+        $x_pid = $acl->create_aro( 'edit_'.$x, 'Article #'.$i.' Edit #'.$x, $i_pid );
+        for( $y=$count; $y<$count*2; $y++ ){
+          $y_pid = $acl->create_aro( 'revision_'.$y, 'Article #'.$i.' Edit #'.$x.' Revision #'.$y, $x_pid );
+        }
       }
     }
-  }
-  echo microtime(true) . '<br>';
+    echo (microtime(true) - $time) . '<br>';
+    $tree = $acl->get_aro_tree();
+    draw_tree('aro', $tree);
+  echo '</div>';
 
-  $tree = $acl->get_aro_tree();
-  draw_tree('aro', $tree);
+  $wb_dbh->runQuery("TRUNCATE TABLE `wbdacl_aro`");
+  echo '<div style="height:100%;float:left;">';
+    $time = microtime(true);
+    $acl->create_aro( 'user', 'Users ARO' );
+    $acl->create_aro( 'user.private', 'Private Users' );
+    if( $aro_id = $acl->create_aro( 'user.private.dhunt', 'David Hunt' ) )
+      $acl->create_aro( 'friends', 'David Hunt Friends', $aro_id );
+    for( $i=0; $i<$count; $i++ ){
+      $i_pid = $acl->create_aro( 'user.private.dhunt.friends.article_'.$i, 'Article #'.$i );
+      for( $x=0; $x<$count * 1.5; $x++ ){
+        $x_pid = $acl->create_aro( 'edit_'.$x, 'Article #'.$i.' Edit #'.$x, $i_pid );
+        for( $y=0; $y<$count * 2; $y++ ){
+          $y_pid = $acl->create_aro( 'revision_'.$y, 'Article #'.$i.' Edit #'.$x.' Revision #'.$y, $x_pid );
+        }
+      }
+    }
+    $acl->create_aro( 'user.public', 'Public Users' );
+    $acl->create_aro( 'user.public.phunt', 'Peter Hunt' );
+    $acl->create_aro( 'user.public.jhunt', 'Jane Hunt' );
+    $acl->create_aro( 'user.public.dhunt', 'David Hunt' );
+    for( $i=0; $i<$count; $i++ ){
+      $acl->create_aro( 'user.public.dhunt.article_'.$i, 'Article #'.$i );
+    }
+    echo (microtime(true) - $time) . '<br>';
+    $tree = $acl->get_aro_tree();
+    draw_tree('aro', $tree);
+  echo '</div>';
+
+  echo '<div style="height:100%;float:left;">';
+    $time = microtime(true);
+    $acl->rebuild_aro();
+    echo (microtime(true) - $time) . '<br>';
+    $tree = $acl->get_aro_tree();
+    draw_tree('aro', $tree);
+  echo '</div>';
+
+  echo '<div style="height:100%;float:left;">';
+    $time = microtime(true);
+    for( $i=$count; $i<$count*2; $i++ ){
+      $i_pid = $acl->create_aro( 'user.private.dhunt.friends.article_'.$i, 'Article #'.$i );
+      for( $x=$count; $x<$count*2; $x++ ){
+        $x_pid = $acl->create_aro( 'edit_'.$x, 'Article #'.$i.' Edit #'.$x, $i_pid );
+        for( $y=$count; $y<$count*2; $y++ ){
+          $y_pid = $acl->create_aro( 'revision_'.$y, 'Article #'.$i.' Edit #'.$x.' Revision #'.$y, $x_pid );
+        }
+      }
+    }
+    echo (microtime(true) - $time) . '<br>';
+    $tree = $acl->get_aro_tree();
+    draw_tree('aro', $tree);
   echo '</div>';
 
   die();
