@@ -62,149 +62,14 @@ require_once('wb_dacl.class.php');
 // ************************************************************************
 // Create a ARO Tree
 
-  $count  = 50;
-  $time   = 0;
-
-  $wb_dbh->runQuery("TRUNCATE TABLE `wbdacl_aro`");
-  echo '<div style="height:100%;float:left;">';
-    $time = microtime(true);
-    $acl->create_aro( 'user', 'Users ARO' );
-    $acl->create_aro( 'user.private', 'Private Users' );
-    if( $aro_id = $acl->create_aro( 'user.private.dhunt', 'David Hunt' ) )
-      $acl->create_aro( 'friends', 'David Hunt Friends', $aro_id );
-    for( $i=0; $i<$count; $i++ ){
-      $i_pid = $acl->create_aro( 'user.private.dhunt.friends.article_'.$i, 'Article #'.$i );
-      for( $x=0; $x<rand(1,$count); $x++ ){
-        $x_pid = $acl->create_aro( 'edit_'.$x, 'Article #'.$i.' Edit #'.$x, $i_pid );
-        for( $y=0; $y<rand(1,$count); $y++ ){
-          $y_pid = $acl->create_aro( 'revision_'.$y, 'Article #'.$i.' Edit #'.$x.' Revision #'.$y, $x_pid );
-        }
-      }
-    }
-    $acl->create_aro( 'user.public', 'Public Users' );
-    $acl->create_aro( 'user.public.phunt', 'Peter Hunt' );
-    $acl->create_aro( 'user.public.jhunt', 'Jane Hunt' );
-    $acl->create_aro( 'user.public.dhunt', 'David Hunt' );
-    for( $i=0; $i<$count; $i++ ){
-      $acl->create_aro( 'user.public.dhunt.article_'.$i, 'Article #'.$i );
-    }
-    echo (microtime(true) - $time) . '<br>';
-    $tree = $acl->get_aro_tree();
-    draw_tree('aro', $tree);
-  echo '</div>';
-
-  echo '<div style="height:100%;float:left;">';
-    $time = microtime(true);
-    $acl->rebuild_aro_alt();
-    echo (microtime(true) - $time) . '<br>';
-    $tree = $acl->get_aro_tree();
-    draw_tree('aro', $tree);
-  echo '</div>';
-
-  echo '<div style="height:100%;float:left;">';
-    $time = microtime(true);
-    $acl->rebuild_aro();
-    echo (microtime(true) - $time) . '<br>';
-    $tree = $acl->get_aro_tree();
-    draw_tree('aro', $tree);
-  echo '</div>';
-
-  die();
-
-  echo '<div style="height:100%;float:left;">';
-    $time = microtime(true);
-    for( $i=$count; $i<$count*2; $i++ ){
-      $i_pid = $acl->create_aro( 'user.private.dhunt.friends.article_'.$i, 'Article #'.$i );
-      for( $x=$count; $x<$count*2; $x++ ){
-        $x_pid = $acl->create_aro( 'edit_'.$x, 'Article #'.$i.' Edit #'.$x, $i_pid );
-        for( $y=$count; $y<$count*2; $y++ ){
-          $y_pid = $acl->create_aro( 'revision_'.$y, 'Article #'.$i.' Edit #'.$x.' Revision #'.$y, $x_pid );
-        }
-      }
-    }
-    echo (microtime(true) - $time) . '<br>';
-    $tree = $acl->get_aro_tree();
-    draw_tree('aro', $tree);
-  echo '</div>';
-
-  $wb_dbh->runQuery("TRUNCATE TABLE `wbdacl_aro`");
-  echo '<div style="height:100%;float:left;">';
-    $time = microtime(true);
-    $acl->create_aro( 'user', 'Users ARO' );
-    $acl->create_aro( 'user.private', 'Private Users' );
-    if( $aro_id = $acl->create_aro( 'user.private.dhunt', 'David Hunt' ) )
-      $acl->create_aro( 'friends', 'David Hunt Friends', $aro_id );
-    for( $i=0; $i<$count; $i++ ){
-      $i_pid = $acl->create_aro( 'user.private.dhunt.friends.article_'.$i, 'Article #'.$i );
-      for( $x=0; $x<$count * 1.5; $x++ ){
-        $x_pid = $acl->create_aro( 'edit_'.$x, 'Article #'.$i.' Edit #'.$x, $i_pid );
-        for( $y=0; $y<$count * 2; $y++ ){
-          $y_pid = $acl->create_aro( 'revision_'.$y, 'Article #'.$i.' Edit #'.$x.' Revision #'.$y, $x_pid );
-        }
-      }
-    }
-    $acl->create_aro( 'user.public', 'Public Users' );
-    $acl->create_aro( 'user.public.phunt', 'Peter Hunt' );
-    $acl->create_aro( 'user.public.jhunt', 'Jane Hunt' );
-    $acl->create_aro( 'user.public.dhunt', 'David Hunt' );
-    for( $i=0; $i<$count; $i++ ){
-      $acl->create_aro( 'user.public.dhunt.article_'.$i, 'Article #'.$i );
-    }
-    echo (microtime(true) - $time) . '<br>';
-    $tree = $acl->get_aro_tree();
-    draw_tree('aro', $tree);
-  echo '</div>';
-
-  echo '<div style="height:100%;float:left;">';
-    $time = microtime(true);
-    $acl->rebuild_aro();
-    echo (microtime(true) - $time) . '<br>';
-    $tree = $acl->get_aro_tree();
-    draw_tree('aro', $tree);
-  echo '</div>';
-
-  echo '<div style="height:100%;float:left;">';
-    $time = microtime(true);
-    for( $i=$count; $i<$count*2; $i++ ){
-      $i_pid = $acl->create_aro( 'user.private.dhunt.friends.article_'.$i, 'Article #'.$i );
-      for( $x=$count; $x<$count*2; $x++ ){
-        $x_pid = $acl->create_aro( 'edit_'.$x, 'Article #'.$i.' Edit #'.$x, $i_pid );
-        for( $y=$count; $y<$count*2; $y++ ){
-          $y_pid = $acl->create_aro( 'revision_'.$y, 'Article #'.$i.' Edit #'.$x.' Revision #'.$y, $x_pid );
-        }
-      }
-    }
-    echo (microtime(true) - $time) . '<br>';
-    $tree = $acl->get_aro_tree();
-    draw_tree('aro', $tree);
-  echo '</div>';
-
-  die();
-
-  echo microtime(true) . '<br>';
-  for( $i=1; $i<2; $i++ ){
-    $acl->create_aro( $i.'user', 'Users ARO' );
-    $acl->create_aro( $i.'user.public', 'Public Users' );
-    $acl->create_aro( $i.'user.public.anonymous', 'Anonymous' );
-    $acl->create_aro( $i.'user.public.dhunt', 'David Hunt' );
-    $acl->create_aro( $i.'user.private', 'Private Users' );
-    if( $aro_id = $acl->create_aro( $i.'user.private.dhunt', 'David Hunt' ) )
-      $acl->create_aro( $i.'friends', 'David Hunt Friends', $aro_id );
-  }
-  echo microtime(true) . '<br>';
-
-// ************************************************************************
-// Draw ARO Tree
-  $tree = $acl->get_aro_tree();
-  draw_tree('aro', $tree);
-
-  $acl->rebuild_aro();
-  $tree = $acl->get_aro_tree();
-  draw_tree('aro', $tree);
-  die();
-
-// ************************************************************************
-// Create a ARO Tree
+  $acl->create_aro( 'user', 'Users ARO' );
+  $acl->create_aro( 'user.private', 'Private Users' );
+  if( $aro_id = $acl->create_aro( 'user.private.dhunt', 'David Hunt' ) )
+    $acl->create_aro( 'friends', 'David Hunt Friends', $aro_id );
+  $acl->create_aro( 'user.public', 'Public Users' );
+  $acl->create_aro( 'user.public.phunt', 'Peter Hunt' );
+  $acl->create_aro( 'user.public.jhunt', 'Jane Hunt' );
+  $acl->create_aro( 'user.public.dhunt', 'David Hunt' );
   $acl->create_aro( 'company', 'Company ARO' );
   $acl->create_aro( 'company.vendors', 'Vendor Companies' );
   $acl->create_aro( 'company.vendors.att', 'AT&T' );
@@ -217,18 +82,23 @@ require_once('wb_dacl.class.php');
 
 // ************************************************************************
 // Create a ACO Tree
+
   $acl->create_aco( 'system', 'System ACO' );
   $acl->create_aco( 'system.admin', 'Admin Area ACO' );
   $acl->create_aco( 'system.private', 'Private Area ACO' );
-  $acl->create_aco( 'system.res', 'Resources ACO' );
-  $acl->create_aco( 'system.res.articles', 'Articles ACO' );
-  if( $aco_id = $acl->create_aco( 'system.project', 'Project' ) ){
-    $acl->create_aco( '1', 'Project #1', $aco_id );
-    $acl->create_aco( '1.action', 'Project #1 Action', $aco_id );
-    $acl->create_aco( '1.action.1', 'Project #1 Action #1', $aco_id );
-    $acl->create_aco( '1.action.2', 'Project #1 Action #2', $aco_id );
-    $acl->create_aco( '1.action.3', 'Project #1 Action #3', $aco_id );
-    $acl->create_aco( '1.action.4', 'Project #1 Action #4', $aco_id );
+  $acl->create_aco( 'resource', 'Resources ACO' );
+  $acl->create_aco( 'resource.articles', 'Articles ACO' );
+  for( $i_a=0; $i_a<100; $i_a++ ){
+    $acl->create_aco( 'project.project-'.$i_a );
+    for( $i_b=0; $i_b<10; $i_b++ ){
+      $acl->create_aco( 'project.project-'.$i_a.'.action.action-'.$i_b );
+      for( $i_c=0; $i_c<10; $i_c++ ){
+        $acl->create_aco( 'project.project-'.$i_a.'.action.action-'.$i_b.'.note.note-'.$i_c );
+        for( $i_d=0; $i_d<10; $i_d++ ){
+          $acl->create_aco( 'project.project-'.$i_a.'.action.action-'.$i_b.'.note.note-'.$i_c.'.edit.edit-'.$i_d );
+        }
+      }
+    }
   }
 
 // ************************************************************************
@@ -240,8 +110,10 @@ require_once('wb_dacl.class.php');
 // Create ARO / ACO Relationships
   $acl->create_acl( 'user', 'system', 'edit', false );
   $acl->create_acl( 'user.public', 'system', 'edit', false );
-  $acl->create_acl( 'user.public.anonymous', 'system', 'edit', false );
   $acl->create_acl( 'user.public.dhunt', 'system', 'edit.name', true );
+  $acl->create_acl( 'user.public.dhunt', 'system.admin', 'edit', true );
+  $acl->create_acl( 'user.public.dhunt', 'system.admin', 'edit.name', true );
+  $acl->create_acl( 'user.public.dhunt', 'system.admin', 'edit.name.first', false );
 
 // ************************************************************************
 // Get ACL Status
@@ -250,27 +122,11 @@ require_once('wb_dacl.class.php');
   echo $acl->check_acl( 'user.public.dhunt', 'system', 'edit' ) ? 1 : 0;
   echo $acl->check_acl( 'user.public.dhunt', 'system.admin', 'edit' ) ? 1 : 0;
   echo $acl->check_acl( 'user.public.dhunt', 'system.admin', 'edit.name' ) ? 1 : 0;
+  echo $acl->check_acl( 'user.public.dhunt', 'system.admin', 'edit.name.first' ) ? 1 : 0;
 
 // ************************************************************************
-// Draw ACO Tree
-  $tree = $acl->get_acl_tree();
-  draw_tree('acl', $tree);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // Testing Functions
+
   function draw_tree($prefix,  &$tree){
     echo '******************************** '.strtoupper($prefix).' Tree <br>';
     if( count($tree) ){
@@ -278,7 +134,8 @@ require_once('wb_dacl.class.php');
       for($i=0;$i<count($tree);$i++){
         if( !($tree[$i][$prefix.'_level'] - $base_level) )
           echo '<br>';
-        echo str_repeat('--',($tree[$i][$prefix.'_level'] - $base_level)).$tree[$i][$prefix.'_label'].' ('.$tree[$i][$prefix.'_lft'].'/'.$tree[$i][$prefix.'_rgt'].') '."<br>";
+        echo $tree[$i][$prefix.'_id'].': '.$tree[$i][$prefix.'_chain'].' ('.$tree[$i][$prefix.'_lft'].'/'.$tree[$i][$prefix.'_rgt'].') '."<br>";
+        // echo str_repeat('--',($tree[$i][$prefix.'_level'] - $base_level)).$tree[$i][$prefix.'_label'].' ('.$tree[$i][$prefix.'_lft'].'/'.$tree[$i][$prefix.'_rgt'].') '."<br>";
       }
     }
     echo '<br>';

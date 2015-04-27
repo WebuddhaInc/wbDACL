@@ -2,15 +2,14 @@
 
 class wb_dacl {
 
-  private $_dbh = null;
-  private $_errorMsg  = null;
-  private $_errorNum  = null;
-
-  private $_keyTrx = '/[^a-z0-9\-\_\.]/';
-  private $_treeStep      = 5000;
-  private $_treeMaxCalc   = 0.10;
-  private $_treeLftMin    = 0;
-  private $_treeRgtMax    = PHP_INT_MAX;
+  private $_dbh         = null;
+  private $_errorMsg    = null;
+  private $_errorNum    = null;
+  private $_keyTrx      = '/[^a-z0-9\-\_\.]/';
+  private $_treeStep    = 5000;
+  private $_treeMaxCalc = 0.01;
+  private $_treeLftMin  = 0;
+  private $_treeRgtMax  = 18446744073709551615; // PHP_INT_MAX;
 
   /************************************************************************************************************************
   *
@@ -56,7 +55,7 @@ class wb_dacl {
   *
   ************************************************************************************************************************/
 
-    public function get_dacl( $type, $type_chain, $type_pid = null ){
+    public function get_dacl( $type, $type_chain, $type_pid = null, $type_extra = null ){
       // Validate Type
         if( !in_array($type, explode(',','aro,aco,acl')) ){
           die('Invalid Object Type: '.$type);
@@ -72,12 +71,76 @@ class wb_dacl {
         else {
           $where[] = "`{$type_prefix}chain` = '". $this->_dbh->getEscaped($type_chain) ."'";
         }
+      // Specific Fields
+        if( is_array($type_extra) ){
+          switch( $type ){
+            case 'acl':
+              $where[] = "`aro_id` = '". (int)$type_extra['aro_id'] ."'";
+              $where[] = "`aco_id` = '". (int)$type_extra['aco_id'] ."'";
+              break;
+            default:
+              break;
+          }
+        }
       // Finalize
         $type_chain = preg_replace($this->_keyTrx,'',$type_chain);
         $this->_dbh->runQuery("
           SELECT *
           FROM `{$type_table}`
           WHERE ". implode(' AND ', $where) ."
+          LIMIT 1
+          ");
+        return $this->_dbh->getRow();
+    }
+
+  /************************************************************************************************************************
+  *
+  *
+  *
+  ************************************************************************************************************************/
+
+    public function get_dacl_closest( $type, $type_chain, $type_extra = null ){
+      // Validate Type
+        if( !in_array($type, explode(',','aro,aco,acl')) ){
+          die('Invalid Object Type: '.$type);
+        }
+        $type_prefix      = $type.'_';
+        $type_table       = '#__'.$type;
+      // Prepare Where
+        $where = array();
+        if( !empty($type_pid) ){
+          $where[] = "`{$type_prefix}pid` = '". (int)$type_pid ."'";
+          $where[] = "`{$type_prefix}key` = '". $this->_dbh->getEscaped($type_chain) ."'";
+        }
+        else {
+          $chain_set  = explode('.', $type_chain);
+          $lookup_set = array();
+          $tmp_where  = array();
+          while( count($chain_set) ){
+            $lookup_set = implode('.', $chain_set);
+            $tmp_where[] = "`{$type_prefix}chain` = '". $this->_dbh->getEscaped($lookup_set) ."'";
+            array_pop( $chain_set );
+          }
+          $where[] = '(' . implode(' OR ', $tmp_where) . ')';
+        }
+      // Specific Fields
+        if( is_array($type_extra) ){
+          switch( $type ){
+            case 'acl':
+              $where[] = "`aro_id` = '". (int)$type_extra['aro_id'] ."'";
+              $where[] = "`aco_id` = '". (int)$type_extra['aco_id'] ."'";
+              break;
+            default:
+              break;
+          }
+        }
+      // Finalize
+        $type_chain = preg_replace($this->_keyTrx,'',$type_chain);
+        $this->_dbh->runQuery("
+          SELECT *
+          FROM `{$type_table}`
+          WHERE ". implode(' AND ', $where) ."
+          ORDER BY `{$type_prefix}level` DESC
           LIMIT 1
           ");
         return $this->_dbh->getRow();
@@ -107,36 +170,50 @@ class wb_dacl {
           // Lookup
             $new_key = $type_chain_set[$i];
           // Record Exists / Update
-            if( $row = $this->get_dacl( $type, $new_key, $new_pid ) ) {
+            if( $row = $this->get_dacl( $type, $new_key, $new_pid, $type_extra ) ) {
               $new_pid      = $row[$type_prefix.'id'];
               $new_id_set[] = $new_pid;
             }
           // New Record
             else {
               // Prepare
-                $new_lft   = 0;
-                $new_rgt   = $this->_treeRgtMax;
-                $new_chain = implode('.', array_slice($type_chain_set,0,$i+1));
-              // Determine Boundaries
+                $new_lft    = 0;
+                $new_rgt    = $this->_treeRgtMax;
+                $new_chain  = implode('.', array_slice($type_chain_set,0,$i+1));
+                if( empty($type_label) ){
+                  $type_label = $new_key;
+                }
+              // Core Fields
                 $newRow = array(
                   $type_prefix.'pid'        => $new_pid,
                   $type_prefix.'rid'        => is_null($new_rid) ? $this->_dbh->getNextID($type_table) : $new_rid,
-                  $type_prefix.'level'      => (int)$new_level,
+                  $type_prefix.'level'      => $this->_bigInt($new_level),
                   $type_prefix.'children'   => 0,
                   $type_prefix.'lft'        => $new_lft,
                   $type_prefix.'rgt'        => $new_rgt,
                   $type_prefix.'key'        => $new_key,
                   $type_prefix.'chain'      => $new_chain,
-                  $type_prefix.'label'      => ($i == count($type_chain_set)-1 ? $type_label : $new_key),
                   $type_prefix.'data'       => ($i == count($type_chain_set)-1 ? $type_data : null)
                   );
+              // Specific Fields
+                switch( $type ){
+                  case 'aro':
+                  case 'aco':
+                    $newRow[$type_prefix.'label'] = ($i == count($type_chain_set)-1 ? $type_label : $new_key);
+                    break;
+                  case 'acl':
+                    $newRow['aro_id']   = null;
+                    $newRow['aco_id']   = null;
+                    $newRow['acl_rule'] = 'allow';
+                    break;
+                }
               // Merge Extra
                 if( is_array($type_extra) ){
                   $newRow = array_merge( $newRow, $type_extra );
                 }
               // Load / Verify Parent
                 if( !is_null($new_pid) ){
-                  // Pull Record
+                  // Pull Records
                     $this->_dbh->runQuery("
                       SELECT `{$type_prefix}id`
                         , `{$type_prefix}rid`
@@ -144,19 +221,19 @@ class wb_dacl {
                         , `{$type_prefix}key`
                         , `{$type_prefix}chain`
                         , `{$type_prefix}lft` AS `{$type_prefix}lft_min`
-                        , (SELECT `{$type_prefix}lft` FROM `{$type_table}` WHERE `{$type_prefix}pid` = '". (int)$new_pid ."' ORDER BY `{$type_prefix}lft` ASC LIMIT 1) AS `{$type_prefix}lft_max`
-                        , (SELECT `{$type_prefix}rgt` FROM `{$type_table}` WHERE `{$type_prefix}pid` = '". (int)$new_pid ."' ORDER BY `{$type_prefix}rgt` DESC LIMIT 1) AS `{$type_prefix}rgt_min`
+                        , (SELECT `{$type_prefix}lft` FROM `{$type_table}` WHERE `{$type_prefix}pid` = '". $this->_bigInt($new_pid) ."' ORDER BY `{$type_prefix}lft` ASC LIMIT 1) AS `{$type_prefix}lft_max`
+                        , (SELECT `{$type_prefix}rgt` FROM `{$type_table}` WHERE `{$type_prefix}pid` = '". $this->_bigInt($new_pid) ."' ORDER BY `{$type_prefix}rgt` DESC LIMIT 1) AS `{$type_prefix}rgt_min`
                         , `{$type_prefix}rgt` AS `{$type_prefix}rgt_max`
                       FROM `{$type_table}`
-                      WHERE `{$type_prefix}id` = '". (int)$new_pid ."'
-                        ");
+                      WHERE `{$type_prefix}id` = '". $this->_bigInt($new_pid) ."'
+                      ");
                     if( !$this->_dbh->getRowCount() ){
-                      throw new Exception('ARO Parent Not Found');
+                      throw new Exception(strtoupper($type).' Parent Not Found: ' . $new_pid);
                       return false;
                     }
                     $parentRow  = $this->_dbh->getRow();
-                    $new_rid    = (int)$parentRow[$type_prefix.'rid'];
-                    $new_level  = (int)$parentRow[$type_prefix.'level'] + 1;
+                    $new_rid    = $this->_bigInt($parentRow[$type_prefix.'rid']);
+                    $new_level  = $this->_bigInt($parentRow[$type_prefix.'level'] + 1);
                   // Error
                     if( $parentRow[$type_prefix.'lft_min'] >= $parentRow[$type_prefix.'rgt_max'] ){
                       $new_lft = 0;
@@ -164,13 +241,13 @@ class wb_dacl {
                     }
                   // No Children
                     else if( is_null($parentRow[$type_prefix.'lft_max']) && is_null($parentRow[$type_prefix.'rgt_min']) ){
-                      $new_lft = (int)$parentRow[$type_prefix.'lft_min'] + 1;
-                      $new_rgt = (int)$parentRow[$type_prefix.'lft_min'] + round(($parentRow[$type_prefix.'rgt_max'] - $parentRow[$type_prefix.'lft_min']) * $this->_treeMaxCalc);
+                      $new_lft = $this->_bigInt($parentRow[$type_prefix.'lft_min'] + 1);
+                      $new_rgt = $this->_bigInt($parentRow[$type_prefix.'lft_min'] + round(($parentRow[$type_prefix.'rgt_max'] - $parentRow[$type_prefix.'lft_min']) * ($new_level * $this->_treeMaxCalc)));
                     }
                   // Next Child
                     else {
-                      $new_lft = (int)$parentRow[$type_prefix.'rgt_min'] + 1;
-                      $new_rgt = (int)$parentRow[$type_prefix.'rgt_min'] + round(($parentRow[$type_prefix.'rgt_max'] - $parentRow[$type_prefix.'rgt_min']) * $this->_treeMaxCalc);
+                      $new_lft = $this->_bigInt($parentRow[$type_prefix.'rgt_min'] + 1);
+                      $new_rgt = $this->_bigInt($parentRow[$type_prefix.'rgt_min'] + round(($parentRow[$type_prefix.'rgt_max'] - $parentRow[$type_prefix.'rgt_min']) * ($new_level * $this->_treeMaxCalc)));
                     }
                   // Next Chain
                     $new_chain = $parentRow[$type_prefix.'chain'].'.'.$new_key;
@@ -190,17 +267,18 @@ class wb_dacl {
               // Update Parent Child Count
                 if( !is_null($new_pid) ){
                   $this->_dbh->runQuery("
-                    UPDATE `#__aro`
-                    SET `aro_children` = `aro_children` + 1
-                    WHERE `aro_id` = '". (int)$new_pid ."'
+                    UPDATE `{$type_table}`
+                    SET `{$type_prefix}children` = `{$type_prefix}children` + 1
+                    WHERE `{$type_prefix}id` = '". $this->_bigInt($new_pid) ."'
                     ");
                 }
               // Update PID for next key
                 $new_pid = end($new_id_set);
               // Rebuild if Necessary
                 if( $new_lft >= $new_rgt ){
-                  inspect( 'rebuild...', $newRow );
-                  $this->_rebuild_aro( $new_rid );
+                  inspect( 'rebuild...', $newRow ); die();
+                  $this->_rebuild_dacl( $type, $new_rid );
+                  die();
                 }
             }
           // Fallback Root ID
@@ -210,6 +288,108 @@ class wb_dacl {
         }
         return $count_created ? end($new_id_set) : false;
     }
+
+    /************************************************************************************************************************
+    *
+    *
+    *
+    ************************************************************************************************************************/
+    public function rebuild_dacl( $type, $type_key = null ){
+      $type_rid = null;
+      if( !is_null($type_key) ){
+        $row = call_user_method_array('get_'.$type, $this, array($type_key));
+        if( !$row ){
+          throw new Exception(strtoupper($type) . ' Key Not Found: ' . $type_key);
+          return false;
+        }
+        $type_rid = $row[$type . '_rid'];
+      }
+      return $this->_rebuild_dacl( $type, $type_rid );
+    }
+
+    /************************************************************************************************************************
+    *
+    *
+    *
+    ************************************************************************************************************************/
+    private function _rebuild_dacl( $type, $type_rid = null, $type_id = null, $lft = null, $children = true, $rgt_max = null ){
+      // Validate Type
+        if( !in_array($type, explode(',','aro,aco,acl')) ){
+          die('Invalid Object Type: '.$type);
+        }
+        $type_prefix      = $type.'_';
+        $type_table       = '#__'.$type;
+      // Determine Left
+        if( is_null($lft) ){
+          if( !empty($type_id) ){
+            $this->_dbh->runQuery("
+              SELECT `{$type_prefix}lft`
+                , `{$type_prefix}rgt`
+              FROM `{$type_table}`
+              WHERE `{$type_prefix}id` = '". intval($type_id) ."'
+              ");
+            $lft = $this->_bigInt($this->_dbh->getValue());
+          }
+          if( empty($lft) ){
+            $lft = 0;
+          }
+        }
+      // Determine Right
+        if( is_null($rgt_max) ){
+          $rgt_max = $this->_treeRgtMax;
+        }
+        $rgt = $lft;
+        if( $children ){
+          $this->_dbh->runQuery("
+            SELECT `{$type_prefix}id`
+              , `{$type_prefix}rid`
+              , `{$type_prefix}children`
+            FROM `{$type_table}`
+            ". (
+            is_null($type_rid)
+              ? "
+                WHERE `{$type_prefix}id` = `{$type_prefix}rid`
+                "
+              : "
+                WHERE `{$type_prefix}rid` = '". $this->_bigInt($type_rid) ."'
+                  AND `{$type_prefix}pid` ". (is_null($type_id) ? "IS NULL" : "= '". intval($type_id) ."'") ."
+                ORDER BY `{$type_prefix}key`
+              "
+              ) ."
+            ");
+          $rows = $this->_dbh->getRows();
+          foreach( $rows AS $row ){
+            $rgt = $this->_rebuild_dacl(
+                      $type,
+                      $row[$type_prefix . 'rid'],
+                      $row[$type_prefix . 'id'],
+                      is_null($type_id) ? 0 : $rgt + 1,
+                      $row[$type_prefix . 'children'],
+                      $rgt_max
+                      );
+            $rgt += $this->_treeStep - 1;
+          }
+          $rgt += $this->_treeStep * count($rows);
+        }
+        if( $lft == $rgt ){
+          $rgt += $this->_treeStep;
+        }
+        if( $rgt > $rgt_max ){
+          die( __FILE__ . ' - ' . __LINE__ . ' ... exceeding rgt_max in rebuild ... ' );
+        }
+      // Update Record
+        if( $type_id ){
+          $this->_dbh->runQuery("
+            UPDATE `{$type_table}`
+            SET `{$type_prefix}lft` = '". intval($lft) ."'
+              , `{$type_prefix}rgt` = '". intval($rgt) ."'
+            WHERE `{$type_prefix}id` = '". intval($type_id) ."'
+            ");
+        }
+      // Return
+        return $rgt + 1;
+    }
+
 
   /*
    *
@@ -225,7 +405,7 @@ class wb_dacl {
   *
   ************************************************************************************************************************/
 
-  public function create_aro( $aro_chain, $aro_label, $aro_pid = null, $aro_data = null ){
+  public function create_aro( $aro_chain, $aro_label = null, $aro_pid = null, $aro_data = null ){
     return $this->store_dacl( 'aro', $aro_chain, $aro_label, $aro_data, array(), $aro_pid );
   }
 
@@ -236,6 +416,15 @@ class wb_dacl {
   ************************************************************************************************************************/
   public function get_aro( $aro_chain ){
     return $this->get_dacl( 'aro', $aro_chain );
+  }
+
+  /************************************************************************************************************************
+  *
+  *
+  *
+  ************************************************************************************************************************/
+  public function get_aro_closest( $aro_chain ){
+    return $this->get_dacl_closest( 'aro', $aro_chain );
   }
 
   /************************************************************************************************************************
@@ -255,9 +444,9 @@ class wb_dacl {
   *
   *
   ************************************************************************************************************************/
-  public function get_aro_tree( $aro_key = null ){
+  public function get_aro_tree( $aro_chain = null ){
     $tree = array();
-    if( is_null($aro_key) ){
+    if( is_null($aro_chain) ){
       $this->_dbh->runQuery("
         SELECT `aro_key`
         FROM `#__aro`
@@ -271,13 +460,13 @@ class wb_dacl {
       return $treeRows;
     }
     else {
-      $row = $this->get_aro( $aro_key );
+      $row = $this->get_aro( $aro_chain );
     }
     $base_level = $row['aro_level'];
     $this->_dbh->runQuery("
-      SELECT `aro_id`, `aro_rid`, `aro_lft`, `aro_rgt`, `aro_level`, `aro_key`, `aro_label`
+      SELECT *
       FROM `#__aro`
-      WHERE `aro_rid` = '". (int)$row['aro_rid'] ."'
+      WHERE `aro_rid` = '". $this->_bigInt($row['aro_rid']) ."'
         AND `aro_lft` BETWEEN '". $row['aro_lft'] ."' AND '". $row['aro_rgt'] ."'
       ORDER BY `aro_lft` ASC
       ");
@@ -289,88 +478,17 @@ class wb_dacl {
   *
   *
   ************************************************************************************************************************/
-  public function rebuild_aro( $aro_key = null ){
+  public function rebuild_aro( $aro_chain = null ){
     $aro_rid = null;
-    if( !is_null($aro_key) ){
-      $row = $this->get_aro( $aro_key );
+    if( !is_null($aro_chain) ){
+      $row = $this->get_aro( $aro_chain );
       if( !$row ){
         throw new Exception('ARO Key Not Found');
         return false;
       }
       $aro_rid = $row['aro_rid'];
     }
-    return $this->_rebuild_aro( $aro_rid );
-  }
-
-  /************************************************************************************************************************
-  *
-  *
-  *
-  ************************************************************************************************************************/
-  private function _rebuild_aro( $aro_rid = null, $aro_id = null, $lft = null, $children = true, $rgt_max = null ){
-    if( is_null($lft) ){
-      if( !empty($aro_id) ){
-        $this->_dbh->runQuery("
-          SELECT `aro_lft`, `aro_rgt`
-          FROM `#__aro`
-          WHERE `aro_id` = '". intval($aro_id) ."'
-          ");
-        $lft = (int)$this->_dbh->getValue();
-      }
-      if( empty($lft) ){
-        $lft = 0;
-      }
-    }
-    if( is_null($rgt_max) ){
-      $rgt_max = $this->_treeRgtMax;
-    }
-    $rgt = $lft;
-    if( $children ){
-      $this->_dbh->runQuery("
-        SELECT `aro`.`aro_id`
-          , `aro`.`aro_rid`
-          , `aro`.`aro_children`
-        FROM `#__aro` AS `aro`
-        ". (
-        is_null($aro_rid)
-          ? "
-            WHERE `aro`.`aro_id` = `aro_rid`
-            "
-          : "
-            WHERE `aro`.`aro_rid` = '". (int)$aro_rid ."'
-              AND `aro`.`aro_pid` ". (is_null($aro_id) ? "IS NULL" : "= '". intval($aro_id) ."'") ."
-            ORDER BY `aro`.`aro_key`
-          "
-          ) ."
-        ");
-      $rows = $this->_dbh->getRows();
-      foreach( $rows AS $row ){
-        $rgt = $this->_rebuild_aro(
-                  $row['aro_rid'],
-                  $row['aro_id'],
-                  is_null($aro_id) ? 0 : $rgt + 1,
-                  $row['aro_children'],
-                  $rgt_max
-                  );
-        $rgt += $this->_treeStep - 1;
-      }
-      $rgt += $this->_treeStep * count($rows);
-    }
-    if( $lft == $rgt ){
-      $rgt += $this->_treeStep;
-    }
-    if( $rgt > $rgt_max ){
-      die( __FILE__ . ' - ' . __LINE__ . ' ... exceeding rgt_max in rebuild ... ' );
-    }
-    if( $aro_id ){
-      $this->_dbh->runQuery("
-        UPDATE `#__aro`
-        SET `aro_lft` = '". intval($lft) ."'
-          , `aro_rgt` = '". intval($rgt) ."'
-        WHERE `aro_id` = '". intval($aro_id) ."'
-        ");
-    }
-    return $rgt + 1;
+    return $this->_rebuild_dacl( 'aro', $aro_rid );
   }
 
   /************************************************************************************************************************
@@ -378,10 +496,10 @@ class wb_dacl {
   * Attempt to predict boundaries and reduce calculations
   *
   ************************************************************************************************************************/
-  public function rebuild_aro_alt( $aro_key = null ){
+  public function rebuild_aro_alt( $aro_chain = null ){
     $aro_rid = null;
-    if( !is_null($aro_key) ){
-      $row = $this->get_aro( $aro_key );
+    if( !is_null($aro_chain) ){
+      $row = $this->get_aro( $aro_chain );
       if( !$row ){
         throw new Exception('ARO Key Not Found');
         return false;
@@ -389,105 +507,6 @@ class wb_dacl {
       $aro_rid = $row['aro_rid'];
     }
     return $this->_rebuild_aro_alt( $aro_rid );
-  }
-
-  /************************************************************************************************************************
-  *
-  * Attempt to predict boundaries and reduce calculations
-  *
-  ************************************************************************************************************************/
-  private function _rebuild_aro_alt( $aro_rid = null, $aro_id = null, $aro_lft = null, $aro_rgt = null, $aro_children = true ){
-    // Validate
-      if( is_null($aro_lft) ){
-        $aro_lft = $this->_treeLftMin;
-      }
-      if( is_null($aro_rgt) ){
-        $aro_rgt = $this->_treeRgtMax;
-      }
-    // Loop Roots if None Defined
-      if( is_null($aro_rid) ){
-        $this->_dbh->runQuery("
-          SELECT `aro`.`aro_id`
-            , `aro`.`aro_rid`
-            , `aro`.`aro_key`
-            , `aro`.`aro_children`
-            /*
-            , (
-              SELECT COUNT(*)
-              FROM `#__aro` AS `aro2`
-              WHERE `aro2`.`aro_rid` = `aro`.`aro_rid`
-              ) AS `aro_rid_count`
-            , (
-              SELECT (SELECT COUNT(*) FROM `#__aro` WHERE `aro_level` = `aro2`.`aro_level` AND `aro_rid` = `aro2`.`aro_rid`) AS `aro_level_count`
-              FROM `#__aro` AS `aro2`
-              WHERE `aro2`.`aro_rid` = `aro`.`aro_rid`
-              GROUP BY `aro2`.`aro_level`
-              ORDER BY `aro_level_count` DESC
-              LIMIT 1
-              ) AS `aro_level_count_max`
-            */
-          FROM `#__aro` AS `aro`
-          WHERE `aro`.`aro_id` = `aro`.`aro_rid`
-          ORDER BY `aro`.`aro_key` ASC, `aro`.`aro_id` ASC
-          ");
-        $rows = $this->_dbh->getRows();
-        foreach( $rows AS $row ){
-          // inspect( 'Root Nodes', $row );
-          $aro_rgt = $this->_rebuild_aro_alt( $row['aro_rid'], $row['aro_id'], $aro_lft, $aro_rgt );
-          if( !$aro_rgt ){
-            return false;
-          }
-        }
-        return true;
-      }
-    // Required
-      if( is_null($aro_id) ){
-        throw new Exception('ARO ID Required');
-        return false;
-      }
-    // Loop Nested
-      $new_aro_lft  = $aro_lft;
-      $new_aro_rgt  = $aro_rgt;
-      $new_aro_step = round($aro_rgt * $this->_treeMaxCalc);
-      if( $aro_children ){
-        $this->_dbh->runQuery("
-          SELECT `aro`.`aro_id`
-            , `aro`.`aro_rid`
-            , `aro`.`aro_children`
-          FROM `#__aro` AS `aro`
-          WHERE `aro`.`aro_pid` = '". (int)$aro_id ."'
-          ORDER BY `aro`.`aro_key`
-          ");
-        $rows = $this->_dbh->getRows();
-        $row_count = count($rows);
-        $new_aro_size = ($new_aro_rgt - $new_aro_lft);
-        if( $new_aro_size < $row_count ){
-          die( __FILE__ . ' - ' . __LINE__ . ' ... exceeding rgt_max in rebuild ... ' );
-        }
-        if( $new_aro_size > $row_count * 10 ){
-          $new_aro_step = round( ($new_aro_size * 0.4) / count($rows) );
-        }
-        else {
-          $new_aro_step = round( $new_aro_size / count($rows) );
-        }
-        foreach( $rows AS $row ){
-          $new_aro_rgt = $this->_rebuild_aro_alt( $row['aro_rid'], $row['aro_id'], $new_aro_lft + 1, $new_aro_lft + $new_aro_step, $row['aro_children'] );
-          $new_aro_lft = $new_aro_rgt;
-          if( $new_aro_rgt > $aro_rgt ){
-            $aro_rgt = $new_aro_rgt;
-            die( __FILE__ . ' - ' . __LINE__ . ' ... exceeding rgt_max in rebuild ... ' );
-          }
-        }
-      }
-    // Update Target
-      $this->_dbh->runUpdate('#__aro', array(
-        'aro_lft' => $aro_lft,
-        'aro_rgt' => $aro_rgt
-        ), array(
-        "`aro_id` = '". (int)$aro_id ."'"
-        ));
-    // Return
-      return $aro_rgt;
   }
 
   /*
@@ -503,69 +522,8 @@ class wb_dacl {
   *
   *
   ************************************************************************************************************************/
-  public function create_aco( $keyStr, $label, $aco_pid = null, $status = 1, $data = null ){
-    $created = 0;
-    $aco_rid = null;
-    $aco_fpid = $aco_pid;
-    $aco_level = null;
-    $chain = explode('.', preg_replace($this->_keyTrx,'',$keyStr));
-    $idset = array();
-    for( $i=0; $i<count($chain); $i++ ){
-      // Lookup
-        $key = $chain[$i];
-        $this->_dbh->runQuery("
-          SELECT `aco_id`, `aco_level`
-          FROM `#__aco`
-          WHERE `aco_pid` ". (is_null($aco_pid) ? "IS NULL" : "= '". intval($aco_pid) ."'") ."
-            AND `aco_key` = '". $this->_dbh->getEscaped($key) ."'
-            ");
-      // Process
-        if( !$this->_dbh->getRowCount() ){
-          if( !is_null($aco_pid) ){
-            // Verify Parent Exists
-              $this->_dbh->runQuery("
-                SELECT `aco_id`, `aco_rid`, `aco_level`
-                FROM `#__aco`
-                WHERE `aco_id` = '". intval($aco_pid) ."'
-                  ");
-              if( !$this->_dbh->getRowCount() )
-                return false;
-              $rows = $this->_dbh->getRows();
-              $row = array_shift( $rows );
-              $aco_rid = intval( $row['aco_rid'] );
-              $aco_level = intval( $row['aco_level'] )+1;
-          }
-          // Insert Object
-            $newRow = array(
-              'aco_pid'     => $aco_pid,
-              'aco_rid'     => is_null($aco_rid) ? $this->_dbh->getNextID('#__aco') : $aco_rid,
-              'aco_level'   => intval($aco_level),
-              'aco_key'     => $key,
-              'aco_label'   => ($i == count($chain)-1 ? $label : $key),
-              'aco_status'  => $status,
-              'aco_data'    => ($i == count($chain)-1 ? $data : null)
-              );
-            $this->_dbh->runInsert('#__aco', $newRow);
-            $idset[] = $aco_pid = $this->_dbh->getLastID();
-            $created++;
-        }
-        else {
-          $rows = $this->_dbh->getRows();
-          $row = array_shift( $rows );
-          $idset[] = $aco_pid = $row['aco_id'];
-        }
-      // Fallback Root ID
-        if( is_null($aco_rid) ){
-          $aco_rid = $aco_pid;
-        }
-      // Store First PID
-        if( is_null($aco_fpid) ){
-          $aco_fpid = $aco_pid;
-        }
-    }
-    if( $created )
-      $this->_rebuild_aco();
-    return $created ? array_pop($idset) : false;
+  public function create_aco( $aco_chain, $aco_label = null, $aco_pid = null, $aco_data = 1 ){
+    return $this->store_dacl( 'aco', $aco_chain, $aco_label, $aco_data, array(), $aco_pid );
   }
 
   /************************************************************************************************************************
@@ -573,36 +531,17 @@ class wb_dacl {
   *
   *
   ************************************************************************************************************************/
-  public function get_aco( $keyStr=null ){
-    $chain = explode('.', $keyStr);
-    $level = count($chain)-1;
-    $key   = $chain[ $level ];
-    $this->_dbh->runQuery("
-      SELECT `aco`.*
-      FROM `#__aco` AS `aco`
-      LEFT JOIN `#__aco` AS `aco_root` ON `aco_root`.`aco_rid` = `aco`.`aco_rid`
-      WHERE `aco_root`.`aco_key` = '". $this->_dbh->getEscaped($chain[0]) ."'
-        AND `aco_root`.`aco_level` = '0'
-        AND `aco`.`aco_key` = '". $this->_dbh->getEscaped($key) ."'
-        AND `aco`.`aco_level` = '". $this->_dbh->getEscaped($level) ."'
-        ");
-    if( $this->_dbh->getRowCount() ){
-      $rows = $this->_dbh->getRows();
-      return array_shift( $rows );
-    }
-    if( !$level ){
-      $this->_dbh->runQuery("
-        SELECT `aco`.*
-        FROM `#__aco` AS `aco`
-        WHERE `aco`.`aco_key` = '". $this->_dbh->getEscaped($key) ."'
-        ORDER BY `aco`.`aco_level` ASC, `aco`.`aco_lft` ASC
-          ");
-      if( $this->_dbh->getRowCount() ){
-        $rows = $this->_dbh->getRows();
-        return array_shift( $rows );
-      }
-    }
-    return null;
+  public function get_aco( $aco_chain = null ){
+    return $this->get_dacl( 'aco', $aco_chain );
+  }
+
+  /************************************************************************************************************************
+  *
+  *
+  *
+  ************************************************************************************************************************/
+  public function get_aco_closest( $aco_chain ){
+    return $this->get_dacl_closest( 'aco', $aco_chain );
   }
 
   /************************************************************************************************************************
@@ -622,28 +561,30 @@ class wb_dacl {
   *
   *
   ************************************************************************************************************************/
-  public function get_aco_tree( $keyStr=null ){
+  public function get_aco_tree( $aco_chain = null ){
     $tree = array();
-    if( is_null($keyStr) ){
+    if( is_null($aco_chain) ){
       $this->_dbh->runQuery("
-        SELECT
-          MIN(`aco_level`) AS `aco_level`
-          , MIN(`aco_lft`) AS `aco_lft`
-          , MAX(`aco_rgt`) AS `aco_rgt`
+        SELECT `aco_key`
         FROM `#__aco`
+        WHERE `aco_id` = `aco_rid`
         ");
       $rows = $this->_dbh->getRows();
-      $row = array_shift( $rows );
-    } else {
-      $row = $this->get_aco( $keyStr );
+      $treeRows = array();
+      foreach( $rows AS $row ){
+        $treeRows = array_merge( $treeRows, $this->get_aco_tree( $row['aco_key'] ) );
+      }
+      return $treeRows;
+    }
+    else {
+      $row = $this->get_aco( $aco_chain );
     }
     $base_level = $row['aco_level'];
     $this->_dbh->runQuery("
-      SELECT `aco_id`, `aco_rid`, `aco_rgt`, `aco_level`, `aco_label`
+      SELECT *
       FROM `#__aco`
-      WHERE `aco_lft`
-      BETWEEN '". $row['aco_lft'] ."'
-        AND '". $row['aco_rgt'] ."'
+      WHERE `aco_rid` = '". $this->_bigInt($row['aco_rid']) ."'
+        AND `aco_lft` BETWEEN '". $row['aco_lft'] ."' AND '". $row['aco_rgt'] ."'
       ORDER BY `aco_lft` ASC
       ");
     return $this->_dbh->getRows();
@@ -654,26 +595,17 @@ class wb_dacl {
   *
   *
   ************************************************************************************************************************/
-  private function _rebuild_aco( $aco_pid=null, $lft=0 ){
-    $rgt = $lft + $this->_treeStep;
-    $this->_dbh->runQuery("
-      SELECT `aco_id`
-      FROM `#__aco`
-      WHERE `aco_pid` ". (is_null($aco_pid) ? "IS NULL" : "= '". intval($aco_pid) ."'") ."
-      ORDER BY `aco_key`
-      ");
-    $rows = $this->_dbh->getRows();
-    for($i=0; $i<count($rows); $i++)
-      $rgt = $this->_rebuild_aco($rows[$i]['aco_id'], $rgt);
-    if( $aco_pid ){
-      $this->_dbh->runQuery("
-        UPDATE `#__aco`
-        SET `aco_lft` = '". intval($lft) ."'
-          , `aco_rgt` = '". intval($rgt) ."'
-        WHERE `aco_id` = '". intval($aco_pid) ."'
-        ");
+  public function rebuild_aco( $aco_chain = null ){
+    $aco_rid = null;
+    if( !is_null($aco_chain) ){
+      $row = $this->get_aco( $aco_chain );
+      if( !$row ){
+        throw new Exception('ARO Key Not Found');
+        return false;
+      }
+      $aco_rid = $row['aco_rid'];
     }
-    return $rgt + $this->_treeStep;
+    return $this->_rebuild_dacl( 'aco', $aco_rid );
   }
 
   /*
@@ -689,97 +621,27 @@ class wb_dacl {
   *
   *
   ************************************************************************************************************************/
-  public function create_acl( $aro_key, $aco_key, $acl_key, $acl_rule = 'allow', $acl_pid = null, $acl_status = 0, $acl_data = null ){
+  public function create_acl( $aro_chain, $aco_chain, $acl_chain, $acl_rule = 'allow', $acl_pid = null, $acl_status = 0, $acl_data = null ){
 
     // Lookup ARO
-      $aro_record = $this->get_aro( $aro_key );
+      $aro_record = $this->get_aro( $aro_chain );
       if( empty($aro_record) ){
-        throw new Exception('ARO Not Found');
+        throw new Exception('ARO Not Found: ' . $aro_chain);
         return false;
       }
 
     // Lookup ACO
-      $aco_record = $this->get_aco( $aco_key );
+      $aco_record = $this->get_aco( $aco_chain );
       if( empty($aco_record) ){
-        throw new Exception('ACO Not Found');
+        throw new Exception('ACO Not Found: ' . $aco_chain);
         return false;
       }
-
     // Prepare
-      $acl_key    = preg_replace($this->_keyTrx,'',$acl_key);
-      $acl_status = empty( $acl_status ) ? 0 : 1;
-      $acl_data   = is_object( $acl_data ) || is_array( $acl_data ) ? serialize($acl_data) : $acl_data;
-
-    // Insert Object(s)
-      $created = 0;
-      $acl_rid = null;
-      $acl_level = null;
-      $chain = explode('.', $acl_key);
-      $idset = array();
-      for( $i=0; $i<count($chain); $i++ ){
-        // Lookup
-          $key = $chain[$i];
-          $this->_dbh->runQuery("
-            SELECT `acl_id`, `acl_level`
-            FROM `#__acl`
-            WHERE ". (
-              is_null($acl_pid)
-                ? "
-                `acl_pid` IS NULL
-                AND `aro_id` = '". (int)$aro_record['aro_id'] ."'
-                AND `aco_id` = '". (int)$aco_record['aco_id'] ."'
-                "
-                : "
-                `acl_pid` = '". intval($acl_pid) ."'
-                "
-                ) ."
-              AND `acl_key` = '". $this->_dbh->getEscaped($key) ."'
-              ");
-        // Process
-          if( !$this->_dbh->getRowCount() ){
-            if( !is_null($acl_pid) ){
-              // Verify Parent Exists
-                $this->_dbh->runQuery("
-                  SELECT `acl_id`, `acl_rid`, `acl_level`
-                  FROM `#__acl`
-                  WHERE `acl_id` = '". intval($acl_pid) ."'
-                  ");
-                if( !$this->_dbh->getRowCount() )
-                  return false;
-                $rows = $this->_dbh->getRows();
-                $row = array_shift( $rows );
-                $acl_rid = intval( $row['acl_rid'] );
-                $acl_level = intval( $row['acl_level'] )+1;
-            }
-            // Insert Object
-              $newRow = array(
-                'aro_id'      => $aro_record['aro_id'],
-                'aco_id'      => $aco_record['aco_id'],
-                'acl_pid'     => $acl_pid,
-                'acl_rid'     => is_null($acl_rid) ? $this->_dbh->getNextID('#__acl') : $acl_rid,
-                'acl_level'   => intval($acl_level),
-                'acl_key'     => $key,
-                'acl_rule'    => $acl_rule,
-                'acl_data'    => ($i == count($chain)-1 ? $acl_data : null),
-                'acl_status'  => $acl_status
-                );
-              $this->_dbh->runInsert('#__acl', $newRow);
-              $idset[] = $acl_pid = $this->_dbh->getLastID();
-              $created++;
-          }
-          else {
-            $rows = $this->_dbh->getRows();
-            $row = array_shift($rows);
-            $idset[] = $acl_pid = $row['acl_id'];
-          }
-        // Fallback Root ID
-          if( is_null($acl_rid) ){
-            $acl_rid = $acl_pid;
-          }
-      }
-      if( $created )
-        $this->_rebuild_acl( $acl_rid );
-      return $created ? array_pop($idset) : false;
+      return $this->store_dacl( 'acl', $acl_chain, null, $acl_data, array(
+        'aro_id'    => $aro_record['aro_id'],
+        'aco_id'    => $aco_record['aco_id'],
+        'acl_rule'  => ((is_bool($acl_rule) && $acl_rule === false) || (is_string($acl_rule) && $acl_rule == 'deny') ? 'deny' : 'allow')
+        ), $acl_pid );
 
   }
 
@@ -788,38 +650,102 @@ class wb_dacl {
   *
   *
   ************************************************************************************************************************/
-  public function check_acl( $aro_key, $aco_key, $acl_key, $acl_status = 0 ){
+  public function get_acl( $aro_chain, $aco_chain, $acl_chain ){
 
     // Lookup ARO
-      $aro_record = $this->get_aro( $aro_key );
+      $aro_record = $this->get_aro( $aro_chain );
       if( empty($aro_record) ){
-        throw new Exception('ARO Not Found');
+        throw new Exception('ARO Not Found: ' . $aro_chain);
         return false;
       }
 
     // Lookup ACO
-      $aco_record = $this->get_aco( $aco_key );
+      $aco_record = $this->get_aco( $aco_chain );
       if( empty($aco_record) ){
-        throw new Exception('ACO Not Found');
+        throw new Exception('ACO Not Found: ' . $aco_chain);
+        return false;
+      }
+
+    // Return
+      return $this->get_dacl( 'acl', $acl_chain, null, array(
+        'aro_id' => $aro_record['aro_id'],
+        'aco_id' => $aco_record['aco_id']
+        ) );
+
+  }
+
+  /************************************************************************************************************************
+  *
+  *
+  *
+  ************************************************************************************************************************/
+  public function get_acl_closest( $aro_chain, $aco_chain, $acl_chain ){
+
+    // Lookup ARO
+      $aro_record = $this->get_aro_closest( $aro_chain );
+      if( empty($aro_record) ){
+        throw new Exception('ARO Not Found: ' . $aro_chain);
+        return false;
+      }
+
+    // Lookup ACO
+      $aco_record = $this->get_aco_closest( $aco_chain );
+      if( empty($aco_record) ){
+        throw new Exception('ACO Not Found: ' . $aco_chain);
         return false;
       }
 
     // Prepare
-      $acl_key    = preg_replace($this->_keyTrx,'',$acl_key);
-      $acl_status = empty( $acl_status ) ? 0 : 1;
+      $acl_chain  = preg_replace($this->_keyTrx,'',$acl_chain);
+      $chain_set  = explode('.', $acl_chain);
+      $lookup_set = array();
+      $where_set  = array();
+      while( count($chain_set) ){
+        $lookup_set = implode('.', $chain_set);
+        $where_set[] = "`acl_chain` = '". $this->_dbh->getEscaped($lookup_set) ."'";
+        array_pop( $chain_set );
+      }
 
     // Query Object
       $this->_dbh->runQuery("
-        SELECT `acl_status`
+        SELECT *
         FROM `#__acl`
-        WHERE `aro_id` = '". (int)$aro_record['aro_id'] ."'
-          AND `aco_id` = '". (int)$aco_record['aco_id'] ."'
-          AND `acl_key` = '". $this->_dbh->getEscaped($acl_key) ."'
+        WHERE `aro_id` = (
+            SELECT `c`.`aro_id`
+            FROM `#__aro` AS `p`
+            LEFT JOIN `#__aro` AS `c` ON (
+              `c`.`aro_rid` = `p`.`aro_rid`
+              AND `c`.`aro_lft` <= `p`.`aro_lft`
+              AND `c`.`aro_rgt` >= `p`.`aro_rgt`
+              AND `c`.`aro_status` = '1'
+              )
+            WHERE `p`.`aro_id` = '". $this->_bigInt($aro_record['aro_id']) ."'
+              AND `p`.`aro_status` = '1'
+            ORDER BY `c`.`aro_level` DESC
+            LIMIT 1
+          )
+          AND `aco_id` = (
+            SELECT `c`.`aco_id`
+            FROM `#__aco` AS `p`
+            LEFT JOIN `#__aco` AS `c` ON (
+              `c`.`aco_rid` = `p`.`aco_rid`
+              AND `c`.`aco_lft` <= `p`.`aco_lft`
+              AND `c`.`aco_rgt` >= `p`.`aco_rgt`
+              AND `c`.`aco_status` = '1'
+              )
+            WHERE `p`.`aco_id` = '". $this->_bigInt($aco_record['aco_id']) ."'
+              AND `p`.`aco_status` = '1'
+            ORDER BY `c`.`aco_level` DESC
+            LIMIT 1
+          )
+          AND (". implode(' OR ', $where_set) .")
+          AND `acl_status` = '1'
+        ORDER BY `acl_level` DESC
+        LIMIT 1
         ");
-      $acl_status = $this->_dbh->getValue() || $acl_status;
 
     // Return
-      return $acl_status;
+      return $this->_dbh->getRow();
 
   }
 
@@ -828,36 +754,47 @@ class wb_dacl {
   *
   *
   ************************************************************************************************************************/
-  private function _rebuild_acl( $acl_rid = null, $acl_pid = null, $lft=0 ){
-    $rgt = $lft + $this->_treeStep;
-    $this->_dbh->runQuery("
-      SELECT `acl_id`, `acl_rid`
-      FROM `#__acl`
-      ". (
-      is_null($acl_rid)
-        ? "
-          WHERE `acl_id` = `acl_rid`
-          "
-        : "
-          WHERE `acl_rid` = '". (int)$acl_rid ."'
-            AND `acl_pid` ". (is_null($acl_pid) ? "IS NULL" : "= '". intval($acl_pid) ."'") ."
-        "
-        ) ."
-      ORDER BY `acl_key`
-      ");
-    die('123');
-    while( $row = $this->_dbh->getRow() ){
-      $rgt = $this->_rebuild_acl($row['acl_rid'], $row['acl_id'], $rgt);
+  public function check_acl( $aro_chain, $aco_chain, $acl_chain, $default_rule = 'deny' ){
+
+    // Lookup ACL
+      $acl_record = $this->get_acl_closest( $aro_chain, $aco_chain, $acl_chain );
+
+    // Return
+      return (empty($acl_record) ? $default_rule : $acl_record['acl_rule']) == 'allow';
+
+  }
+
+  /************************************************************************************************************************
+  *
+  *
+  *
+  ************************************************************************************************************************/
+  public function rebuild_acl( $aro_chain = null, $aco_chain = null, $acl_chain = null ){
+    $acl_rid = null;
+    if( !is_null($acl_chain) ){
+      $row = $this->get_acl( $acl_chain );
+      if( !$row ){
+        throw new Exception('ACL Key Not Found');
+        return false;
+      }
+      $acl_rid = $row['acl_rid'];
     }
-    if( $acl_pid ){
-      $this->_dbh->runQuery("
-        UPDATE `#__acl`
-        SET `acl_lft` = '". intval($lft) ."'
-          , `acl_rgt` = '". intval($rgt) ."'
-        WHERE `acl_id` = '". intval($acl_pid) ."'
-        ");
-    }
-    return $rgt + $this->_treeStep;
+    return $this->_rebuild_dacl( 'acl', $acl_rid );
+  }
+
+  /************************************************************************************************************************
+  *
+  *
+  *
+  ************************************************************************************************************************/
+
+  /**
+   * [_bigInt description]
+   * @param  [type] $bigInt [description]
+   * @return [type]         [description]
+   */
+  private function _bigInt( $bigInt ){
+    return number_format($bigInt,0,'','');
   }
 
 }
