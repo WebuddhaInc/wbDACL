@@ -98,6 +98,7 @@ require_once('wb_dacl.class.php');
 
 // ************************************************************************
 // Connect to Database
+
   $wb_dbh = new wbDatabase(array(
     'host'   => 'localhost',
     'name'   => 'acl_wbdacl',
@@ -107,13 +108,17 @@ require_once('wb_dacl.class.php');
     'prefix' => 'wbdacl_',
     'debug'  => false
     ));
-  $wb_dbh->runQuery("TRUNCATE TABLE `wbdacl_aro`");
-  $wb_dbh->runQuery("TRUNCATE TABLE `wbdacl_aco`");
-  $wb_dbh->runQuery("TRUNCATE TABLE `wbdacl_acl`");
 
 // ************************************************************************
 // Initialize ACL
   $acl = new wb_dacl();
+
+// ************************************************************************
+// Flush Database
+
+  $wb_dbh->runQuery("TRUNCATE TABLE `wbdacl_aro`");
+  $wb_dbh->runQuery("TRUNCATE TABLE `wbdacl_aco`");
+  $wb_dbh->runQuery("TRUNCATE TABLE `wbdacl_acl`");
 
 // ************************************************************************
 // Create a ARO Tree
@@ -150,11 +155,11 @@ require_once('wb_dacl.class.php');
 // ************************************************************************
 // Create a ACO Tree
 
-  for( $i_a=0; $i_a<5; $i_a++ ){
+  for( $i_a=0; $i_a<2; $i_a++ ){
     $acl->create_aco( 'project.project-'.$i_a );
-    for( $i_b=0; $i_b<4; $i_b++ ){
+    for( $i_b=0; $i_b<2; $i_b++ ){
       $acl->create_aco( 'project.project-'.$i_a.'.action.action-'.$i_b );
-      for( $i_c=0; $i_c<3; $i_c++ ){
+      for( $i_c=0; $i_c<2; $i_c++ ){
         $acl->create_aco( 'project.project-'.$i_a.'.action.action-'.$i_b.'.note.note-'.$i_c );
         for( $i_d=0; $i_d<2; $i_d++ ){
           $acl->create_aco( 'project.project-'.$i_a.'.action.action-'.$i_b.'.note.note-'.$i_c.'.edit.edit-'.$i_d );
@@ -172,10 +177,10 @@ require_once('wb_dacl.class.php');
 // Create ACL Rule
 
   $acl->create_acl( 'user', 'system', 'edit', false );
-  $acl->create_acl( 'user.public', 'system', 'edit', false );
+  $acl->create_acl( 'user.public', 'system', 'edit', true );
   $acl->create_acl( 'user.public.dhunt', 'system', 'edit.name', true );
-  $acl->create_acl( 'user.public.dhunt', 'system.admin', 'edit.name', true );
-  $acl->create_acl( 'user.public.dhunt', 'system.admin', 'edit.name.first', false );
+  $acl->create_acl( 'user.public.dhunt', 'system.admin', 'edit.name', false );
+  $acl->create_acl( 'user.public.dhunt', 'system.admin', 'edit.name.first', true );
 
 // ************************************************************************
 // Get ACL Status
@@ -183,6 +188,7 @@ require_once('wb_dacl.class.php');
   echo $acl->check_acl( 'user', 'system', 'edit' ) ? 1 : 0;
   echo $acl->check_acl( 'user.public', 'system', 'edit' ) ? 1 : 0;
   echo $acl->check_acl( 'user.public.dhunt', 'system', 'edit' ) ? 1 : 0;
+  echo $acl->check_acl( 'user.public.dhunt', 'system', 'edit.name' ) ? 1 : 0;
   echo $acl->check_acl( 'user.public.dhunt', 'system.admin', 'edit' ) ? 1 : 0;
   echo $acl->check_acl( 'user.public.dhunt', 'system.admin', 'edit.name' ) ? 1 : 0;
   echo $acl->check_acl( 'user.public.dhunt', 'system.admin', 'edit.name.first' ) ? 1 : 0;

@@ -195,21 +195,23 @@ class wb_dacl {
                   $type_prefix.'chain'      => $new_chain,
                   $type_prefix.'data'       => ($i == count($type_chain_set)-1 ? $type_data : null)
                   );
+              // Merge Extra
+                if( is_array($type_extra) ){
+                  $newRow = array_merge( $newRow, $type_extra );
+                }
               // Specific Fields
                 switch( $type ){
                   case 'aro':
                   case 'aco':
-                    $newRow[$type_prefix.'label'] = ($i == count($type_chain_set)-1 ? $type_label : $new_key);
+                    if( empty($newRow[$type_prefix.'label']) ){
+                      $newRow[$type_prefix.'label'] = ($i == count($type_chain_set)-1 ? $type_label : $new_key);
+                    }
                     break;
                   case 'acl':
-                    $newRow['aro_id']   = null;
-                    $newRow['aco_id']   = null;
-                    $newRow['acl_rule'] = 'inherit';
+                    if( empty($newRow['acl_rule']) || $i < count($type_chain_set)-1 ){
+                      $newRow['acl_rule'] = 'inherit';
+                    }
                     break;
-                }
-              // Merge Extra
-                if( is_array($type_extra) ){
-                  $newRow = array_merge( $newRow, $type_extra );
                 }
               // Load / Verify Parent
                 if( !is_null($new_pid) ){
@@ -725,16 +727,20 @@ class wb_dacl {
       $chain_set = explode('.', preg_replace($this->_keyTrx,'',$acl_chain));
       while( count($chain_set) ){
         $lookup_set = implode('.', $chain_set);
-        $where_chain['acl'][] = "`acl_chain` = '". $this->_dbh->getEscaped($lookup_set) ."'";
+        $where_chain['acl'][] = "`acl`.`acl_chain` = '". $this->_dbh->getEscaped($lookup_set) ."'";
         array_pop( $chain_set );
       }
 
     // Return Query
       return "
-        SELECT *
-        FROM `#__acl`
-        WHERE `aro_id` = (
+        SELECT `acl`.*
+             , `aro`.*
+             , `aco`.*
+        FROM `#__acl` AS `acl`
+        JOIN (
             SELECT `c`.`aro_id`
+                 , `c`.`aro_level`
+                 , `c`.`aro_chain`
             FROM `#__aro` AS `p`
             LEFT JOIN `#__aro` AS `c` ON (
               `c`.`aro_rid` = `p`.`aro_rid`
@@ -746,10 +752,13 @@ class wb_dacl {
               AND `p`.`aro_status` = '1'
             ORDER BY `p`.`aro_level` DESC
                    , `c`.`aro_level` DESC
-            LIMIT 1
           )
-          AND `aco_id` = (
+          AS `aro`
+          ON `aro`.`aro_id` = `acl`.`aro_id`
+        JOIN (
             SELECT `c`.`aco_id`
+                 , `c`.`aco_level`
+                 , `c`.`aco_chain`
             FROM `#__aco` AS `p`
             LEFT JOIN `#__aco` AS `c` ON (
               `c`.`aco_rid` = `p`.`aco_rid`
@@ -763,9 +772,19 @@ class wb_dacl {
                    , `c`.`aco_level` DESC
             LIMIT 1
           )
-          AND (". implode(' OR ', $where_chain['acl']) .")
-          AND `acl_status` = '1'
-        ORDER BY `acl_level` DESC
+          AS `aco`
+          ON `aco`.`aco_id` = `acl`.`aco_id`
+        WHERE (". implode(' OR ', $where_chain['acl']) .")
+          AND `acl`.`acl_status` = '1'
+          AND `acl`.`acl_rule` != 'inherit'
+        ORDER BY `aro`.`aro_level` DESC
+               , `aco`.`aco_level` DESC
+               , `acl`.`acl_level` DESC
+               , CASE WHEN `acl`.`acl_rule` = 'inherit' THEN 0
+                  WHEN `acl`.`acl_rule` LIKE 'allow' THEN 1
+                  WHEN `acl`.`acl_rule` LIKE 'deny' THEN 2
+                  ELSE 4
+                 END DESC
         LIMIT 1
         ";
 
