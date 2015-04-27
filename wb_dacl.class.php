@@ -204,7 +204,7 @@ class wb_dacl {
                   case 'acl':
                     $newRow['aro_id']   = null;
                     $newRow['aco_id']   = null;
-                    $newRow['acl_rule'] = 'allow';
+                    $newRow['acl_rule'] = 'inherit';
                     break;
                 }
               // Merge Extra
@@ -467,7 +467,7 @@ class wb_dacl {
       SELECT *
       FROM `#__aro`
       WHERE `aro_rid` = '". $this->_bigInt($row['aro_rid']) ."'
-        AND `aro_lft` BETWEEN '". $row['aro_lft'] ."' AND '". $row['aro_rgt'] ."'
+        AND `aro_lft` BETWEEN '". $this->_bigInt($row['aro_lft']) ."' AND '". $this->_bigInt($row['aro_rgt']) ."'
       ORDER BY `aro_lft` ASC
       ");
     return $this->_dbh->getRows();
@@ -584,7 +584,7 @@ class wb_dacl {
       SELECT *
       FROM `#__aco`
       WHERE `aco_rid` = '". $this->_bigInt($row['aco_rid']) ."'
-        AND `aco_lft` BETWEEN '". $row['aco_lft'] ."' AND '". $row['aco_rgt'] ."'
+        AND `aco_lft` BETWEEN '". $this->_bigInt($row['aco_lft']) ."' AND '". $this->_bigInt($row['aco_rgt']) ."'
       ORDER BY `aco_lft` ASC
       ");
     return $this->_dbh->getRows();
@@ -621,7 +621,7 @@ class wb_dacl {
   *
   *
   ************************************************************************************************************************/
-  public function create_acl( $aro_chain, $aco_chain, $acl_chain, $acl_rule = 'allow', $acl_pid = null, $acl_status = 0, $acl_data = null ){
+  public function create_acl( $aro_chain, $aco_chain, $acl_chain, $acl_rule = 'inherit', $acl_pid = null, $acl_status = 0, $acl_data = null ){
 
     // Lookup ARO
       $aro_record = $this->get_aro( $aro_chain );
@@ -681,33 +681,56 @@ class wb_dacl {
   ************************************************************************************************************************/
   public function get_acl_closest( $aro_chain, $aco_chain, $acl_chain ){
 
-    // Lookup ARO
-      $aro_record = $this->get_aro_closest( $aro_chain );
-      if( empty($aro_record) ){
-        throw new Exception('ARO Not Found: ' . $aro_chain);
-        return false;
-      }
+    // Query Object
+      $this->_dbh->runQuery(
+        $this->get_acl_lookup_sql( $aro_chain, $aco_chain, $acl_chain )
+        );
 
-    // Lookup ACO
-      $aco_record = $this->get_aco_closest( $aco_chain );
-      if( empty($aco_record) ){
-        throw new Exception('ACO Not Found: ' . $aco_chain);
-        return false;
-      }
+    // Return
+      return $this->_dbh->getRow();
 
-    // Prepare
-      $acl_chain  = preg_replace($this->_keyTrx,'',$acl_chain);
-      $chain_set  = explode('.', $acl_chain);
-      $lookup_set = array();
-      $where_set  = array();
+  }
+
+  /************************************************************************************************************************
+  *
+  *
+  *
+  ************************************************************************************************************************/
+  public function get_acl_lookup_sql( $aro_chain, $aco_chain, $acl_chain ){
+
+    // Prepare Chains
+      $where_chain = array(
+          'aro' => array(),
+          'aco' => array(),
+          'acl' => array()
+          );
+
+    // ARO Chain
+      $chain_set = explode('.', preg_replace($this->_keyTrx,'',$aro_chain));
       while( count($chain_set) ){
         $lookup_set = implode('.', $chain_set);
-        $where_set[] = "`acl_chain` = '". $this->_dbh->getEscaped($lookup_set) ."'";
+        $where_chain['aro'][] = "`p`.`aro_chain` = '". $this->_dbh->getEscaped($lookup_set) ."'";
         array_pop( $chain_set );
       }
 
-    // Query Object
-      $this->_dbh->runQuery("
+    // ACO Chain
+      $chain_set = explode('.', preg_replace($this->_keyTrx,'',$aco_chain));
+      while( count($chain_set) ){
+        $lookup_set = implode('.', $chain_set);
+        $where_chain['aco'][] = "`p`.`aco_chain` = '". $this->_dbh->getEscaped($lookup_set) ."'";
+        array_pop( $chain_set );
+      }
+
+    // ACL Chain
+      $chain_set = explode('.', preg_replace($this->_keyTrx,'',$acl_chain));
+      while( count($chain_set) ){
+        $lookup_set = implode('.', $chain_set);
+        $where_chain['acl'][] = "`acl_chain` = '". $this->_dbh->getEscaped($lookup_set) ."'";
+        array_pop( $chain_set );
+      }
+
+    // Return Query
+      return "
         SELECT *
         FROM `#__acl`
         WHERE `aro_id` = (
@@ -719,9 +742,10 @@ class wb_dacl {
               AND `c`.`aro_rgt` >= `p`.`aro_rgt`
               AND `c`.`aro_status` = '1'
               )
-            WHERE `p`.`aro_id` = '". $this->_bigInt($aro_record['aro_id']) ."'
+            WHERE (". implode(' OR ', $where_chain['aro']) .")
               AND `p`.`aro_status` = '1'
-            ORDER BY `c`.`aro_level` DESC
+            ORDER BY `p`.`aro_level` DESC
+                   , `c`.`aro_level` DESC
             LIMIT 1
           )
           AND `aco_id` = (
@@ -733,19 +757,17 @@ class wb_dacl {
               AND `c`.`aco_rgt` >= `p`.`aco_rgt`
               AND `c`.`aco_status` = '1'
               )
-            WHERE `p`.`aco_id` = '". $this->_bigInt($aco_record['aco_id']) ."'
+            WHERE (". implode(' OR ', $where_chain['aco']) .")
               AND `p`.`aco_status` = '1'
-            ORDER BY `c`.`aco_level` DESC
+            ORDER BY `p`.`aco_level` DESC
+                   , `c`.`aco_level` DESC
             LIMIT 1
           )
-          AND (". implode(' OR ', $where_set) .")
+          AND (". implode(' OR ', $where_chain['acl']) .")
           AND `acl_status` = '1'
         ORDER BY `acl_level` DESC
         LIMIT 1
-        ");
-
-    // Return
-      return $this->_dbh->getRow();
+        ";
 
   }
 
