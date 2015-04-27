@@ -10,89 +10,14 @@ require_once('wb_dacl.class.php');
 
 /*
 
-
-  Resource
-    Work
-      User
-      Schedule
-      Rates
-    Material
-      Schedule
-      Rates
-
-  User (ARO)
-  User Groups (ARO)
-
-  Task (ACO)
-
-  User Group Permission (ARO -> ACO)
-  User Permission (ARO -> ACO)
-
   ARO - Access Request Object
     Something from which control is being requested
 
   ACO - Access Control Object
     Something for which control is being managed
 
-  Example
-    dogs
-    dogs.dog.1
-
-  Example SQL Injection Lookup
-    SELECT *
-    FROM `wbdacl_acl`
-    WHERE `aro_id` = (
-        SELECT `c`.`aro_id`
-        FROM `wbdacl_aro` AS `p`
-        LEFT JOIN `wbdacl_aro` AS `c` ON (
-          `c`.`aro_rid` = `p`.`aro_rid`
-          AND `c`.`aro_lft` <= `p`.`aro_lft`
-          AND `c`.`aro_rgt` >= `p`.`aro_rgt`
-          AND `c`.`aro_status` = '1'
-          )
-        WHERE `p`.`aro_id` = (
-          SELECT `aro_id`
-          FROM `wbdacl_aro`
-          WHERE `aro_status` = '1'
-            AND (
-              `aro_chain` = 'user'
-              OR
-              `aro_chain` = 'user.public'
-              OR
-              `aro_chain` = 'user.public.dhunt'
-              )
-          ORDER BY `aro_level` DESC
-          LIMIT 1
-          )
-        ORDER BY `c`.`aro_level` DESC
-        LIMIT 1
-      )
-      AND `aco_id` = (
-        SELECT `c`.`aco_id`
-        FROM `wbdacl_aco` AS `p`
-        LEFT JOIN `wbdacl_aco` AS `c` ON (
-          `c`.`aco_rid` = `p`.`aco_rid`
-          AND `c`.`aco_lft` <= `p`.`aco_lft`
-          AND `c`.`aco_rgt` >= `p`.`aco_rgt`
-          AND `c`.`aco_status` = '1'
-          )
-        WHERE `p`.`aco_status` = '1'
-          AND (
-            `p`.`aco_chain` = 'system'
-            OR
-            `p`.`aco_chain` = 'system.admin'
-            )
-        ORDER BY `p`.`aco_level` DESC, `c`.`aco_level` DESC
-        LIMIT 1
-      )
-      AND (
-        `acl_chain` = 'edit'
-        OR
-        `acl_chain` = 'edit.name'
-        )
-      AND `acl_status` = '1'
-    ORDER BY `acl_level` DESC
-    LIMIT 1
+  ACL - Access Control Rule
+    The rule to which a Resource and Control object will be governed
 
  */
 
