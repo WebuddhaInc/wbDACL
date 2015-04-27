@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS `wbdacl_acl` (
   `acl_children` smallint(5) unsigned NOT NULL COMMENT 'Children',
   `acl_key` varchar(255) COLLATE utf8_bin NOT NULL COMMENT 'Control Key',
   `acl_chain` varchar(255) COLLATE utf8_bin NOT NULL COMMENT 'Control Key Chain',
-  `acl_rule` enum('allow','deny') COLLATE utf8_bin NOT NULL DEFAULT 'allow' COMMENT 'Control Rule',
+  `acl_rule` enum('inherit','allow','deny') COLLATE utf8_bin NOT NULL DEFAULT 'inherit' COMMENT 'Control Rule',
   `acl_data` blob COMMENT 'Control Data',
   `acl_status` enum('0','1') COLLATE utf8_bin NOT NULL DEFAULT '1' COMMENT 'Control Status',
   PRIMARY KEY (`acl_id`),
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS `wbdacl_acl` (
   KEY `acl_chain` (`acl_chain`),
   KEY `acl_rule` (`acl_rule`),
   KEY `acl_status` (`acl_status`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
+) DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1;
 
 DROP TABLE IF EXISTS `wbdacl_aco`;
 CREATE TABLE IF NOT EXISTS `wbdacl_aco` (
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS `wbdacl_aco` (
   KEY `aco_key` (`aco_key`),
   KEY `aco_chain` (`aco_chain`),
   KEY `aco_status` (`aco_status`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
+) DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1;
 
 DROP TABLE IF EXISTS `wbdacl_aro`;
 CREATE TABLE IF NOT EXISTS `wbdacl_aro` (
@@ -74,4 +74,4 @@ CREATE TABLE IF NOT EXISTS `wbdacl_aro` (
   KEY `aro_key` (`aro_key`),
   KEY `aro_chain` (`aro_chain`),
   KEY `aro_status` (`aro_status`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
+) DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1;
